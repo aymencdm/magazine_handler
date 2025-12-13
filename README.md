@@ -307,3 +307,5 @@ For issues or questions:
 ## License
 
 This project is created for educational purposes for school electronics magazine management.
+#   m a g a z i n e _ h a n d l e r  
+ 
