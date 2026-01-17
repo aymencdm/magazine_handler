@@ -4,14 +4,20 @@ from .models import Category, Material, Student, BorrowTransaction, BorrowedItem
 
 class CategorySerializer(serializers.ModelSerializer):
     materials_count = serializers.SerializerMethodField()
+    parent_name = serializers.CharField(source='parent.name', read_only=True, allow_null=True)
+    subcategories_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'material_type', 'materials_count', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'material_type', 'parent', 'parent_name', 
+                  'subcategories_count', 'materials_count', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
     def get_materials_count(self, obj):
         return obj.materials.count()
+
+    def get_subcategories_count(self, obj):
+        return obj.subcategories.count()
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -196,18 +202,27 @@ class BorrowTransactionCreateSerializer(serializers.ModelSerializer):
         return items
 
     def create(self, validated_data):
-        """Create transaction and borrowed items"""
+        """Create transaction and borrowed items with inventory tracking"""
         items_data = validated_data.pop('items')
-        transaction = BorrowTransaction.objects.create(**validated_data)
-
-        for item_data in items_data:
-            BorrowedItem.objects.create(
-                transaction=transaction,
-                material_id=item_data['material_id'],
-                quantity_borrowed=item_data['quantity_borrowed']
-            )
-
-        return transaction
+        
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            transaction = BorrowTransaction.objects.create(**validated_data)
+    
+            for item_data in items_data:
+                # Create the borrowed item
+                borrowed_item = BorrowedItem.objects.create(
+                    transaction=transaction,
+                    material_id=item_data['material_id'],
+                    quantity_borrowed=item_data['quantity_borrowed']
+                )
+                
+                # Decrease material availability
+                material = borrowed_item.material
+                material.available_quantity -= borrowed_item.quantity_borrowed
+                material.save()
+    
+            return transaction
 
 
 class PDFRecordSerializer(serializers.ModelSerializer):

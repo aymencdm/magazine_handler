@@ -15,7 +15,9 @@ class CategoriesScreen extends StatefulWidget {
 class _CategoriesScreenState extends State<CategoriesScreen> {
   final ApiService _apiService = ApiService();
   List<Category> _categories = [];
+  List<Category> _allCategories = []; // For parent dropdown
   bool _loading = true;
+  Set<int> _expandedCategories = {};
 
   @override
   void initState() {
@@ -27,7 +29,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     try {
       final categories = await _apiService.getCategories();
       setState(() {
-        _categories = categories;
+        _allCategories = categories;
+        _categories = categories.where((c) => c.isTopLevel).toList();
         _loading = false;
       });
     } catch (e) {
@@ -40,6 +43,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         );
       }
     }
+  }
+
+  List<Category> _getSubcategories(int parentId) {
+    return _allCategories.where((c) => c.parentId == parentId).toList();
   }
 
   @override
@@ -86,51 +93,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     : ListView.builder(
                         itemCount: _categories.length,
                         itemBuilder: (context, index) {
-                          final category = _categories[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => CategoryDetailScreen(category: category),
-                                  ),
-                                ).then((_) => _loadCategories()); // Refresh when returning
-                              },
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.purple.shade100,
-                                child: const Icon(Icons.category, color: Colors.purple),
-                              ),
-                              title: Text(category.name),
-                              subtitle: Text(category.description.isEmpty 
-                                  ? 'No description' 
-                                  : category.description),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Chip(
-                                    label: Text('${category.materialsCount} materials'),
-                                    backgroundColor: Colors.blue.shade50,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                                    onPressed: () => _exportCategoryPdf(category),
-                                    tooltip: 'Export PDF',
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    onPressed: () => _showEditCategoryDialog(category),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete),
-                                    onPressed: () => _deleteCategory(category),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
+                          return _buildCategoryTile(_categories[index], 0);
                         },
                       ),
           ),
@@ -139,73 +102,225 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     );
   }
 
-  void _showAddCategoryDialog() {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
+  Widget _buildCategoryTile(Category category, int indentLevel) {
+    final subcategories = _getSubcategories(category.id);
+    final isExpanded = _expandedCategories.contains(category.id);
+    final hasSubcategories = subcategories.isNotEmpty;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Category'),
-        content: Form(
-          key: formKey,
-          child: SizedBox(
-            width: 400,
-            child: Column(
+    return Column(
+      children: [
+        Card(
+          margin: EdgeInsets.only(
+            left: indentLevel * 24.0,
+            bottom: 8,
+            right: 0,
+          ),
+          child: ListTile(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CategoryDetailScreen(category: category),
+                ),
+              ).then((_) => _loadCategories());
+            },
+            leading: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Category Name'),
-                  validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                if (hasSubcategories)
+                  IconButton(
+                    icon: Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.purple,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedCategories.remove(category.id);
+                        } else {
+                          _expandedCategories.add(category.id);
+                        }
+                      });
+                    },
+                  )
+                else
+                  const SizedBox(width: 48),
+                CircleAvatar(
+                  backgroundColor: indentLevel > 0 
+                      ? Colors.purple.shade50 
+                      : Colors.purple.shade100,
+                  child: Icon(
+                    indentLevel > 0 ? Icons.subdirectory_arrow_right : Icons.category,
+                    color: Colors.purple,
+                    size: indentLevel > 0 ? 20 : 24,
+                  ),
                 ),
-                TextFormField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description (optional)'),
-                  maxLines: 2,
+              ],
+            ),
+            title: Text(category.name),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (category.description.isNotEmpty)
+                  Text(category.description),
+                if (category.parentName != null)
+                  Text(
+                    'Parent: ${category.parentName}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (category.subcategoriesCount > 0)
+                  Chip(
+                    label: Text('${category.subcategoriesCount} sub'),
+                    backgroundColor: Colors.orange.shade50,
+                    labelStyle: const TextStyle(fontSize: 12),
+                  ),
+                const SizedBox(width: 4),
+                Chip(
+                  label: Text('${category.materialsCount} items'),
+                  backgroundColor: Colors.blue.shade50,
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, color: Colors.green),
+                  onPressed: () => _showAddCategoryDialog(parentCategory: category),
+                  tooltip: 'Add Subcategory',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                  onPressed: () => _exportCategoryPdf(category),
+                  tooltip: 'Export PDF',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showEditCategoryDialog(category),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _deleteCategory(category),
                 ),
               ],
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+        if (isExpanded)
+          ...subcategories.map((sub) => _buildCategoryTile(sub, indentLevel + 1)),
+      ],
+    );
+  }
+
+  void _showAddCategoryDialog({Category? parentCategory}) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    Category? selectedParent = parentCategory;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(parentCategory != null 
+              ? 'Add Subcategory to ${parentCategory.name}' 
+              : 'Add Category'),
+          content: Form(
+            key: formKey,
+            child: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Category Name'),
+                    validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                  ),
+                  TextFormField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'Description (optional)'),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int?>(
+                    value: selectedParent?.id,
+                    decoration: const InputDecoration(
+                      labelText: 'Parent Category (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('None (Top Level)'),
+                      ),
+                      ..._allCategories.map((cat) => DropdownMenuItem<int?>(
+                        value: cat.id,
+                        child: Text(cat.parentName != null 
+                            ? '${cat.parentName} > ${cat.name}'
+                            : cat.name),
+                      )),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedParent = value != null 
+                            ? _allCategories.firstWhere((c) => c.id == value)
+                            : null;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate()) {
-                try {
-                  await _apiService.createCategory(Category(
-                    id: 0,
-                    name: nameController.text,
-                    description: descriptionController.text,
-                    materialType: 'FABLAB',
-                    materialsCount: 0,
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  ));
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    _loadCategories();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Category added successfully')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  try {
+                    await _apiService.createCategory(Category(
+                      id: 0,
+                      name: nameController.text,
+                      description: descriptionController.text,
+                      materialType: 'FABLAB',
+                      parentId: selectedParent?.id,
+                      parentName: selectedParent?.name,
+                      subcategoriesCount: 0,
+                      materialsCount: 0,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ));
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      _loadCategories();
+                      if (selectedParent != null) {
+                        _expandedCategories.add(selectedParent!.id);
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Category added successfully')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
                   }
                 }
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -214,82 +329,120 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: category.name);
     final descriptionController = TextEditingController(text: category.description);
+    int? selectedParentId = category.parentId;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Category'),
-        content: Form(
-          key: formKey,
-          child: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Category Name'),
-                  validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
-                ),
-                TextFormField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description (optional)'),
-                  maxLines: 2,
-                ),
-              ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Category'),
+          content: Form(
+            key: formKey,
+            child: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Category Name'),
+                    validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                  ),
+                  TextFormField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'Description (optional)'),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int?>(
+                    value: selectedParentId,
+                    decoration: const InputDecoration(
+                      labelText: 'Parent Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('None (Top Level)'),
+                      ),
+                      ..._allCategories
+                          .where((cat) => cat.id != category.id) // Can't be parent of itself
+                          .map((cat) => DropdownMenuItem<int?>(
+                        value: cat.id,
+                        child: Text(cat.parentName != null 
+                            ? '${cat.parentName} > ${cat.name}'
+                            : cat.name),
+                      )),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedParentId = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate()) {
-                try {
-                  await _apiService.updateCategory(
-                    category.id,
-                    Category(
-                      id: category.id,
-                      name: nameController.text,
-                      description: descriptionController.text,
-                      materialType: category.materialType,
-                      materialsCount: category.materialsCount,
-                      createdAt: category.createdAt,
-                      updatedAt: DateTime.now(),
-                    ),
-                  );
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    _loadCategories();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Category updated successfully')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  try {
+                    await _apiService.updateCategory(
+                      category.id,
+                      Category(
+                        id: category.id,
+                        name: nameController.text,
+                        description: descriptionController.text,
+                        materialType: category.materialType,
+                        parentId: selectedParentId,
+                        parentName: null,
+                        subcategoriesCount: category.subcategoriesCount,
+                        materialsCount: category.materialsCount,
+                        createdAt: category.createdAt,
+                        updatedAt: DateTime.now(),
+                      ),
                     );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      _loadCategories();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Category updated successfully')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
                   }
                 }
-              }
-            },
-            child: const Text('Update'),
-          ),
-        ],
+              },
+              child: const Text('Update'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _deleteCategory(Category category) {
+    String warningText = 'Are you sure you want to delete "${category.name}"?\n\nThis will also delete all materials in this category.';
+    if (category.subcategoriesCount > 0) {
+      warningText += '\n\n⚠️ Warning: This will also delete ${category.subcategoriesCount} subcategories and all their materials!';
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Category'),
-        content: Text('Are you sure you want to delete "${category.name}"?\n\nThis will also delete all materials in this category.'),
+        content: Text(warningText),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

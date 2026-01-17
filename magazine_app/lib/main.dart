@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/fablab_screen.dart';
 import 'screens/stcb_screen.dart';
-import 'screens/students_screen.dart';
 import 'screens/groups_screen.dart';
 import 'screens/transactions_screen.dart';
 import 'screens/settings_screen.dart';
@@ -51,7 +50,6 @@ class _HomePageState extends State<HomePage> {
     const DashboardScreen(),
     const FabLabScreen(),
     const STCBScreen(),
-    const StudentsScreen(),
     const GroupsScreen(),
     const TransactionsScreen(),
     const SettingsScreen(),
@@ -89,11 +87,6 @@ class _HomePageState extends State<HomePage> {
                 icon: Icon(Icons.science_outlined),
                 selectedIcon: Icon(Icons.science),
                 label: Text('STCB Club'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.people_outline),
-                selectedIcon: Icon(Icons.people),
-                label: Text('Students'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.group_outlined),

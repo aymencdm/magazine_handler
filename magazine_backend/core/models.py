@@ -10,17 +10,27 @@ class Category(models.Model):
         ('STCB', 'STCB Club'),
     ]
     
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     material_type = models.CharField(max_length=10, choices=MATERIAL_TYPE_CHOICES, default='FABLAB')
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='subcategories'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name_plural = "Categories"
         ordering = ['name']
+        unique_together = ['parent', 'name']
 
     def __str__(self):
+        if self.parent:
+            return f"{self.parent.name} > {self.name}"
         return self.name
 
 

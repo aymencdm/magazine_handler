@@ -25,8 +25,23 @@ from .pdf_generator import generate_borrowing_pdf, add_signature_to_pdf, generat
 
 class CategoryViewSet(viewsets.ModelViewSet):
     """API endpoint for material categories"""
-    queryset = Category.objects.all()
+    queryset = Category.objects.prefetch_related('subcategories').all()
     serializer_class = CategorySerializer
+
+    @action(detail=False, methods=['get'])
+    def top_level(self, request):
+        """Get only top-level categories (no parent)"""
+        categories = self.queryset.filter(parent__isnull=True)
+        serializer = self.get_serializer(categories, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def subcategories(self, request, pk=None):
+        """Get subcategories of a specific category"""
+        category = self.get_object()
+        subcategories = category.subcategories.all()
+        serializer = self.get_serializer(subcategories, many=True)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def by_type(self, request):
@@ -204,12 +219,24 @@ class StudentViewSet(viewsets.ModelViewSet):
 
 class BorrowTransactionViewSet(viewsets.ModelViewSet):
     """API endpoint for borrow transactions"""
-    queryset = BorrowTransaction.objects.select_related('student').prefetch_related('borrowed_items__material__category').all()
+    queryset = BorrowTransaction.objects.select_related('student', 'group').prefetch_related('borrowed_items__material__category').all()
     
     def get_serializer_class(self):
         if self.action == 'create':
             return BorrowTransactionCreateSerializer
         return BorrowTransactionSerializer
+
+    def perform_destroy(self, instance):
+        """Restore remaining inventory when transaction is deleted"""
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for item in instance.borrowed_items.all():
+                remaining = item.quantity_borrowed - item.quantity_returned
+                if remaining > 0:
+                    material = item.material
+                    material.available_quantity += remaining
+                    material.save()
+            instance.delete()
 
     @action(detail=True, methods=['post'])
     def generate_pdf(self, request, pk=None):
@@ -305,16 +332,33 @@ class BorrowTransactionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'No items provided'}, status=400)
         
         try:
-            for item_data in items_data:
-                item_id = item_data.get('id')
-                quantity_returned = item_data.get('quantity_returned')
+            from django.db import transaction as db_transaction
+            with db_transaction.atomic():
+                for item_data in items_data:
+                    item_id = item_data.get('item_id')  # Changed from 'id' to 'item_id'
+                    quantity_returned = item_data.get('quantity_returned', 0)
+                    
+                    if item_id and quantity_returned > 0:
+                        borrowed_item = BorrowedItem.objects.get(id=item_id, transaction=transaction)
+                        
+                        # Validate we don't return more than borrowed
+                        remaining = borrowed_item.quantity_borrowed - borrowed_item.quantity_returned
+                        actual_return = min(quantity_returned, remaining)
+                        
+                        if actual_return > 0:
+                            # Update item
+                            borrowed_item.quantity_returned += actual_return
+                            borrowed_item.save()
+                            
+                            # Update material availability
+                            material = borrowed_item.material
+                            material.available_quantity += actual_return
+                            material.save()
                 
-                if item_id and quantity_returned is not None:
-                    borrowed_item = BorrowedItem.objects.get(id=item_id, transaction=transaction)
-                    borrowed_item.quantity_returned = quantity_returned
-                    borrowed_item.save()
+                # Update transaction status
+                transaction.update_status()
             
-            # Refresh transaction
+            # Refresh and return
             transaction.refresh_from_db()
             serializer = self.get_serializer(transaction)
             return Response(serializer.data)
@@ -351,6 +395,7 @@ def export_database(request):
                 'name': cat.name,
                 'description': cat.description,
                 'material_type': cat.material_type,
+                'parent_id': cat.parent_id,
             })
         
         # Export materials
@@ -437,10 +482,14 @@ def import_database(request):
         # Map old IDs to new IDs for foreign keys
         category_id_map = {}
         student_id_map = {}
+        categories_parent_map = {}  # Store parent relationships to set after all categories are created
         
-        # Import categories (skip duplicates by name)
+        # Import categories (first pass - create without parent)
         for cat_data in data.get('categories', []):
-            existing = Category.objects.filter(name=cat_data['name']).first()
+            existing = Category.objects.filter(
+                name=cat_data['name'],
+                parent_id=category_id_map.get(cat_data.get('parent_id'))
+            ).first()
             if existing:
                 category_id_map[cat_data['id']] = existing.id
             else:
@@ -451,6 +500,15 @@ def import_database(request):
                 )
                 category_id_map[cat_data['id']] = new_cat.id
                 stats['categories_added'] += 1
+                # Store parent relationship for second pass
+                if cat_data.get('parent_id'):
+                    categories_parent_map[new_cat.id] = cat_data['parent_id']
+        
+        # Second pass - set parent relationships
+        for new_cat_id, old_parent_id in categories_parent_map.items():
+            new_parent_id = category_id_map.get(old_parent_id)
+            if new_parent_id:
+                Category.objects.filter(id=new_cat_id).update(parent_id=new_parent_id)
         
         # Import students (skip duplicates by id_card_number)
         for student_data in data.get('students', []):

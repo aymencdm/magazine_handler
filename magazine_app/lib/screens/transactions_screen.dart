@@ -30,22 +30,26 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Future<void> _loadData() async {
+    print('DEBUG: Starting full data refresh...');
     await Future.wait([
       _loadTransactions(),
       _loadGroups(),
       _loadMaterials(),
       _loadCategories(),
     ]);
+    print('DEBUG: Data refresh complete.');
   }
 
   Future<void> _loadTransactions() async {
     try {
       final transactions = await _apiService.getTransactions();
+      print('DEBUG: Loaded ${transactions.length} transactions.');
       setState(() {
         _transactions = transactions;
         _loading = false;
       });
     } catch (e) {
+      print('DEBUG: Error loading transactions: $e');
       if (mounted) {
         setState(() => _loading = false);
         _showErrorSnackBar('Error loading transactions: $e');
@@ -56,10 +60,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Future<void> _loadGroups() async {
     try {
       final groups = await _apiService.getGroups();
+      print('DEBUG: Loaded ${groups.length} groups.');
       setState(() {
         _groups = groups;
       });
     } catch (e) {
+      print('DEBUG: Error loading groups: $e');
       if (mounted) _showErrorSnackBar('Error loading groups: $e');
     }
   }
@@ -67,10 +73,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Future<void> _loadMaterials() async {
     try {
       final materials = await _apiService.getMaterials();
+      print('DEBUG: Loaded ${materials.length} materials.');
       setState(() {
         _materials = materials;
       });
     } catch (e) {
+      print('DEBUG: Error loading materials: $e');
       if (mounted) _showErrorSnackBar('Error loading materials: $e');
     }
   }
@@ -78,10 +86,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Future<void> _loadCategories() async {
     try {
       final categories = await _apiService.getCategories();
+      print('DEBUG: Loaded ${categories.length} categories.');
       setState(() {
         _categories = categories;
       });
     } catch (e) {
+      print('DEBUG: Error loading categories: $e');
       if (mounted) _showErrorSnackBar('Error loading categories: $e');
     }
   }
@@ -90,6 +100,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
+  }
+
+  String _getCategoryDisplayName(Category cat) {
+    if (cat.parentName != null && cat.parentName!.isNotEmpty) {
+      return "${cat.parentName} > ${cat.name}";
+    }
+    return cat.name;
   }
 
   @override
@@ -174,6 +191,19 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.end,
                                         children: [
+                                          if (transaction.status != 'RETURNED')
+                                            Padding(
+                                              padding: const EdgeInsets.only(right: 8.0),
+                                              child: ElevatedButton.icon(
+                                                onPressed: () => _showReturnDialog(transaction),
+                                                icon: const Icon(Icons.assignment_return),
+                                                label: const Text('Return Materials'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green.shade600,
+                                                  foregroundColor: Colors.white,
+                                                ),
+                                              ),
+                                            ),
                                           if (!transaction.hasPdf)
                                             ElevatedButton.icon(
                                               onPressed: () async {
@@ -211,6 +241,128 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           );
                         },
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReturnDialog(BorrowTransaction transaction) {
+    final formKey = GlobalKey<FormState>();
+    // Track return quantities: {itemId: controller}
+    final Map<int, TextEditingController> qtyControllers = {};
+    for (var item in transaction.borrowedItems) {
+      final remaining = item.quantityBorrowed - item.quantityReturned;
+      qtyControllers[item.id!] = TextEditingController(text: remaining.toString());
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Return Materials - ${transaction.groupName.isNotEmpty ? transaction.groupName : transaction.studentName}'),
+        content: Form(
+          key: formKey,
+          child: SizedBox(
+            width: 600,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Enter quantities to return for each item:'),
+                  const SizedBox(height: 16),
+                  ...transaction.borrowedItems.map((item) {
+                    final remaining = item.quantityBorrowed - item.quantityReturned;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item.materialName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                Text('Borrowed: ${item.quantityBorrowed} | Returned: ${item.quantityReturned}', 
+                                     style: Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 1,
+                            child: TextFormField(
+                              controller: qtyControllers[item.id!],
+                              decoration: const InputDecoration(
+                                labelText: 'Return Qty',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              validator: (value) {
+                                if (value == null || value.isEmpty) return 'Required';
+                                final qty = int.tryParse(value);
+                                if (qty == null) return 'Invalid';
+                                if (qty < 0) return 'Negative';
+                                if (qty > remaining) return 'Max $remaining';
+                                return null;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                final List<Map<String, dynamic>> returnItems = [];
+                qtyControllers.forEach((itemId, controller) {
+                  final qty = int.parse(controller.text);
+                  if (qty > 0) {
+                    returnItems.add({
+                      'item_id': itemId,
+                      'quantity_returned': qty,
+                    });
+                  }
+                });
+
+                if (returnItems.isEmpty) {
+                  _showErrorSnackBar('Please return at least one item');
+                  return;
+                }
+
+                try {
+                  print('DEBUG: Calling returnItems API...');
+                  await _apiService.returnItems(transaction.id!, returnItems);
+                  print('DEBUG: returnItems API success.');
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    print('DEBUG: Refreshing data after return...');
+                    _loadData(); // Full refresh to update material quantities
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Items returned successfully')),
+                    );
+                  }
+                } catch (e) {
+                  print('DEBUG: Error returning items: $e');
+                  if (context.mounted) {
+                    _showErrorSnackBar('Error: $e');
+                  }
+                }
+              }
+            },
+            child: const Text('Confirm Return'),
           ),
         ],
       ),
@@ -321,7 +473,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                   items: _categories.map((cat) {
                                     return DropdownMenuItem(
                                       value: cat.id,
-                                      child: Text(cat.name),
+                                      child: Text(_getCategoryDisplayName(cat)),
                                     );
                                   }).toList(),
                                   onChanged: (value) {
@@ -416,18 +568,22 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       'quantity_borrowed': item['quantity'],
                     }).toList();
                     
+                    print('DEBUG: Calling createTransaction API...');
                     await _apiService.createTransaction(
                       groupId: selectedGroupId!,
                       items: items,
                     );
+                    print('DEBUG: createTransaction API success.');
                     if (context.mounted) {
                       Navigator.pop(context);
-                      _loadTransactions();
+                      print('DEBUG: Refreshing data after create...');
+                      _loadData(); // Full refresh to update material quantities
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Transaction created successfully')),
                       );
                     }
                   } catch (e) {
+                    print('DEBUG: Error creating transaction: $e');
                     if (context.mounted) {
                       // Show detailed error in dialog
                       showDialog(
@@ -457,7 +613,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-    Future<void> _openPdf(BorrowTransaction transaction) async {
+  Future<void> _openPdf(BorrowTransaction transaction) async {
     try {
       final documentsDir = await getApplicationDocumentsDirectory();
       

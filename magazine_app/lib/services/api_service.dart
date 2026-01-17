@@ -103,6 +103,22 @@ class ApiService {
     return (data as List).map((json) => Category.fromJson(json)).toList();
   }
 
+  Future<List<Category>> getTopLevelCategories() async {
+    final data = await _get('/categories/top_level/');
+    if (data is Map && data.containsKey('results')) {
+      return (data['results'] as List).map((json) => Category.fromJson(json)).toList();
+    }
+    return (data as List).map((json) => Category.fromJson(json)).toList();
+  }
+
+  Future<List<Category>> getSubcategories(int parentId) async {
+    final data = await _get('/categories/$parentId/subcategories/');
+    if (data is Map && data.containsKey('results')) {
+      return (data['results'] as List).map((json) => Category.fromJson(json)).toList();
+    }
+    return (data as List).map((json) => Category.fromJson(json)).toList();
+  }
+
   Future<Category> createCategory(Category category) async {
     final data = await _post('/categories/', category.toJson());
     return Category.fromJson(data);

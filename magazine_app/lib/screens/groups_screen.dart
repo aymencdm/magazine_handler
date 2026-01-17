@@ -95,54 +95,60 @@ class _GroupsScreenState extends State<GroupsScreen> {
                         itemBuilder: (context, index) {
                           final group = _groups[index];
                           return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          group.name,
-                                          style: Theme.of(context).textTheme.titleLarge,
-                                          overflow: TextOverflow.ellipsis,
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: () => _showGroupDialog(group: group),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            group.name,
+                                            style: Theme.of(context).textTheme.titleLarge,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
-                                      ),
-                                      PopupMenuButton(
-                                        itemBuilder: (context) => [
-                                          const PopupMenuItem(
-                                            value: 'edit',
-                                            child: Text('Edit'),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'delete',
-                                            child: Text('Delete'),
-                                          ),
-                                        ],
-                                        onSelected: (value) {
-                                          if (value == 'edit') {
-                                            _showGroupDialog(group: group);
-                                          } else if (value == 'delete') {
-                                            _deleteGroup(group);
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(),
-                                  Expanded(
-                                    child: ListView(
-                                      children: group.students.map((s) => Text('• ${s.fullName}')).toList(),
+                                        PopupMenuButton(
+                                          itemBuilder: (context) => [
+                                            const PopupMenuItem(
+                                              value: 'edit',
+                                              child: Text('Edit'),
+                                            ),
+                                            const PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete'),
+                                            ),
+                                          ],
+                                          onSelected: (value) {
+                                            if (value == 'edit') {
+                                              _showGroupDialog(group: group);
+                                            } else if (value == 'delete') {
+                                              _deleteGroup(group);
+                                            }
+                                          },
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Transactions: ${group.transactionsCount}',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                ],
+                                    const Divider(),
+                                    Expanded(
+                                      child: ListView(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        children: group.students.map((s) => Text('• ${s.fullName}')).toList(),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Transactions: ${group.transactionsCount}',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -318,7 +324,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
             onPressed: () async {
               if (formKey.currentState!.validate()) {
                 try {
-                  final newStudent = await _apiService.createStudent(Student(
+                  await _apiService.createStudent(Student(
                     id: 0,
                     fullName: nameController.text,
                     phoneNumber: phoneController.text,
