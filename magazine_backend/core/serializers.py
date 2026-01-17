@@ -64,8 +64,6 @@ class StudentSerializer(serializers.ModelSerializer):
 class BorrowedItemSerializer(serializers.ModelSerializer):
     material_name = serializers.CharField(source='material.name', read_only=True)
     category_name = serializers.CharField(source='material.category.name', read_only=True)
-    is_fully_returned = serializers.ReadOnlyField()
-
     class Meta:
         model = BorrowedItem
         fields = [
@@ -210,17 +208,13 @@ class BorrowTransactionCreateSerializer(serializers.ModelSerializer):
             transaction = BorrowTransaction.objects.create(**validated_data)
     
             for item_data in items_data:
-                # Create the borrowed item
-                borrowed_item = BorrowedItem.objects.create(
+                material = Material.objects.get(id=item_data['material_id'])
+                # Inventory decrease is handled by BorrowedItem signal
+                BorrowedItem.objects.create(
                     transaction=transaction,
-                    material_id=item_data['material_id'],
+                    material=material,
                     quantity_borrowed=item_data['quantity_borrowed']
                 )
-                
-                # Decrease material availability
-                material = borrowed_item.material
-                material.available_quantity -= borrowed_item.quantity_borrowed
-                material.save()
     
             return transaction
 

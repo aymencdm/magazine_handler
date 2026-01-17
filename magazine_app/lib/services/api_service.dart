@@ -283,12 +283,18 @@ class ApiService {
 
   // ========== BORROW TRANSACTIONS ==========
   Future<List<BorrowTransaction>> getTransactions() async {
+    print('DEBUG [ApiService]: Fetching transactions...');
     final data = await _get('/transactions/');
+    print('DEBUG [ApiService]: Raw transactions data: $data');
     // Handle DRF pagination
     if (data is Map && data.containsKey('results')) {
-      return (data['results'] as List).map((json) => BorrowTransaction.fromJson(json)).toList();
+      final results = data['results'] as List;
+      print('DEBUG [ApiService]: Parsing ${results.length} transactions from results.');
+      return results.map((json) => BorrowTransaction.fromJson(json)).toList();
     }
-    return (data as List).map((json) => BorrowTransaction.fromJson(json)).toList();
+    final results = data as List;
+    print('DEBUG [ApiService]: Parsing ${results.length} transactions from list.');
+    return results.map((json) => BorrowTransaction.fromJson(json)).toList();
   }
 
   Future<BorrowTransaction> getTransaction(int id) async {
@@ -314,11 +320,12 @@ class ApiService {
     return BorrowTransaction.fromJson(data);
   }
 
-  Future<BorrowTransaction> returnItems(int transactionId, List<Map<String, dynamic>> items) async {
-    final data = await _post('/transactions/$transactionId/return_items/', {
-      'items': items,
-    });
-    return BorrowTransaction.fromJson(data);
+  Future<void> returnItems(int transactionId, List<Map<String, dynamic>> items) async {
+    await _post('/transactions/$transactionId/return_items/', {'items': items});
+  }
+
+  Future<void> deleteTransaction(int id) async {
+    await _delete('/transactions/$id/');
   }
 
   // ========== PDF OPERATIONS ==========

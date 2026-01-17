@@ -77,31 +77,36 @@ class BorrowTransaction {
   });
 
   factory BorrowTransaction.fromJson(Map<String, dynamic> json) {
-    return BorrowTransaction(
-      id: json['id'],
-      student: json['student'],
-      studentName: json['student_name'] ?? '',
-      studentIdCard: json['student_id_card'] ?? '',
-      group: json['group'],
-      groupName: json['group_name'] ?? '',
-      borrowDate: json['borrow_date'] != null 
-          ? DateTime.parse(json['borrow_date']) 
-          : DateTime.now(),
-      expectedReturnDate: json['expected_return_date'] != null 
-          ? DateTime.parse(json['expected_return_date']) 
-          : null,
-      actualReturnDate: json['actual_return_date'] != null 
-          ? DateTime.parse(json['actual_return_date']) 
-          : null,
-      status: json['status'] ?? 'UNKNOWN',
-      notes: json['notes'] ?? '',
-      borrowedItems: (json['borrowed_items'] as List?)
-          ?.map((item) => BorrowedItem.fromJson(item))
-          .toList() ?? [],
-      hasPdf: json['has_pdf'] ?? false,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
-    );
+    try {
+      return BorrowTransaction(
+        id: json['id'],
+        student: json['student'],
+        studentName: json['student_name'] ?? '',
+        studentIdCard: json['student_id_card'] ?? '',
+        group: json['group'],
+        groupName: json['group_name'] ?? '',
+        borrowDate: json['borrow_date'] != null 
+            ? DateTime.parse(json['borrow_date']) 
+            : DateTime.now(),
+        expectedReturnDate: json['expected_return_date'] != null 
+            ? DateTime.parse(json['expected_return_date']) 
+            : null,
+        actualReturnDate: json['actual_return_date'] != null 
+            ? DateTime.parse(json['actual_return_date']) 
+            : null,
+        status: json['status'] ?? 'UNKNOWN',
+        notes: json['notes'] ?? '',
+        borrowedItems: (json['borrowed_items'] as List?)
+            ?.map((item) => BorrowedItem.fromJson(item))
+            .toList() ?? [],
+        hasPdf: json['has_pdf'] ?? false,
+        createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+        updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      );
+    } catch (e, stack) {
+      print('DEBUG ERR [BorrowTransaction]: Error parsing JSON: $e\n$stack');
+      rethrow;
+    }
   }
 
   Map<String, dynamic> toJson() {

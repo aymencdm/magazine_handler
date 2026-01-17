@@ -113,15 +113,35 @@ class BorrowTransaction(models.Model):
         name = self.group.name if self.group else (self.student.full_name if self.student else "Unknown")
         return f"{name} - {self.borrow_date.strftime('%Y-%m-%d')} ({self.status})"
 
+    def save(self, *args, **kwargs):
+        """Override save to potentially update status automatically if items changed"""
+        # Note: update_status() should still be called explicitly after adding items 
+        # as items are saved after the transaction usually.
+        super().save(*args, **kwargs)
+
     def update_status(self):
         """Update transaction status based on borrowed items"""
-        items = self.borrowed_items.all()
-        if not items.exists():
+        print(f"DEBUG [Backend]: Updating status for Transaction {self.id}", flush=True)
+        # Use a fresh query to bypass any prefetch cache
+        from .models import BorrowedItem
+        items = BorrowedItem.objects.filter(transaction=self)
+        
+        count = items.count()
+        if count == 0:
+            print(f"DEBUG [Backend]: No items found for Transaction {self.id}", flush=True)
             return
         
-        all_returned = all(item.quantity_returned >= item.quantity_borrowed for item in items)
-        any_returned = any(item.quantity_returned > 0 for item in items)
+        all_returned = True
+        any_returned = False
         
+        for item in items:
+            print(f"DEBUG [Backend]: Item {item.id} - {item.material.name}: {item.quantity_returned}/{item.quantity_borrowed}", flush=True)
+            if item.quantity_returned < item.quantity_borrowed:
+                all_returned = False
+            if item.quantity_returned > 0:
+                any_returned = True
+        
+        old_status = self.status
         if all_returned:
             self.status = 'RETURNED'
             if not self.actual_return_date:
@@ -131,7 +151,14 @@ class BorrowTransaction(models.Model):
         else:
             self.status = 'BORROWED'
         
-        self.save()
+        print(f"DEBUG [Backend]: Transaction {self.id} status: {old_status} -> {self.status} (all={all_returned}, any={any_returned})", flush=True)
+        # Use update() to avoid triggering signals recursively if needed, 
+        # but here we want to persist it.
+        BorrowTransaction.objects.filter(pk=self.pk).update(
+            status=self.status, 
+            actual_return_date=self.actual_return_date,
+            updated_at=timezone.now()
+        )
 
 
 class BorrowedItem(models.Model):

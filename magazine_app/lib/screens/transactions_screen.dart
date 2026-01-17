@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../services/api_service.dart';
 import '../models/borrow_transaction.dart';
 import '../models/group.dart';
+import '../models/student.dart';
 import '../models/material.dart' as app_material;
 import '../models/category.dart';
 
@@ -19,6 +20,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   final ApiService _apiService = ApiService();
   List<BorrowTransaction> _transactions = [];
   List<Group> _groups = [];
+  List<Student> _allStudents = [];
   List<app_material.Material> _materials = [];
   List<Category> _categories = [];
   bool _loading = true;
@@ -34,9 +36,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     await Future.wait([
       _loadTransactions(),
       _loadGroups(),
+      _loadStudents(),
       _loadMaterials(),
       _loadCategories(),
-    ]);
+    ].map((e) => e as Future<dynamic>).toList());
     print('DEBUG: Data refresh complete.');
   }
 
@@ -67,6 +70,19 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     } catch (e) {
       print('DEBUG: Error loading groups: $e');
       if (mounted) _showErrorSnackBar('Error loading groups: $e');
+    }
+  }
+
+  Future<void> _loadStudents() async {
+    try {
+      final students = await _apiService.getStudents();
+      print('DEBUG: Loaded ${students.length} students.');
+      setState(() {
+        _allStudents = students;
+      });
+    } catch (e) {
+      print('DEBUG: Error loading students: $e');
+      if (mounted) _showErrorSnackBar('Error loading students: $e');
     }
   }
 
@@ -111,140 +127,290 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Borrow Transactions',
-                style: Theme.of(context).textTheme.headlineMedium,
+    // Filter transactions for each tab
+    final nothingReturned = _transactions.where((t) => t.status.toUpperCase() == 'BORROWED').toList();
+    final partiallyReturned = _transactions.where((t) => t.status.toUpperCase() == 'PARTIALLY_RETURNED').toList();
+    final fullyReturned = _transactions.where((t) => t.status.toUpperCase() == 'RETURNED').toList();
+
+    return DefaultTabController(
+      length: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Borrow Transactions',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _showNewTransactionDialog(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('New Transaction'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TabBar(
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Nothing Returned'),
+                      if (nothingReturned.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${nothingReturned.length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Returned Some'),
+                      if (partiallyReturned.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blue,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${partiallyReturned.length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Fully Returned'),
+                      if (fullyReturned.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${fullyReturned.length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              labelColor: Theme.of(context).primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorSize: TabBarIndicatorSize.tab,
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TabBarView(
+                      children: [
+                        _buildTransactionList(nothingReturned, 'No borrowed items currently.'),
+                        _buildTransactionList(partiallyReturned, 'No partially returned items.'),
+                        _buildTransactionList(fullyReturned, 'No completed returns.'),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransactionList(List<BorrowTransaction> transactions, String emptyMessage) {
+    if (transactions.isEmpty) {
+      return Center(child: Text(emptyMessage));
+    }
+
+    return ListView.builder(
+      itemCount: transactions.length,
+      itemBuilder: (context, index) {
+        final transaction = transactions[index];
+        final displayName = transaction.groupName.isNotEmpty 
+            ? transaction.groupName 
+            : transaction.studentName;
+            
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ExpansionTile(
+            onExpansionChanged: (expanded) {
+              print('DEBUG: ExpansionTile changed to: $expanded for transaction ${transaction.id}');
+            },
+            leading: Icon(
+              transaction.status.toUpperCase() == 'BORROWED'
+                  ? Icons.arrow_upward
+                  : transaction.status.toUpperCase() == 'RETURNED'
+                      ? Icons.arrow_downward
+                      : Icons.swap_horiz,
+              color: transaction.status.toUpperCase() == 'BORROWED'
+                  ? Colors.orange
+                  : transaction.status.toUpperCase() == 'RETURNED'
+                      ? Colors.green
+                      : Colors.blue,
+            ),
+            title: InkWell(
+              onTap: transaction.group != null 
+                ? () {
+                    print('DEBUG: Clicked group name: ${transaction.groupName}');
+                    final group = _groups.firstWhere((g) => g.id == transaction.group);
+                    _showGroupDialogFromTransaction(group);
+                  }
+                : null,
+              child: Text(
+                displayName,
+                style: transaction.group != null 
+                    ? const TextStyle(decoration: TextDecoration.underline, color: Colors.blue)
+                    : null,
               ),
-              ElevatedButton.icon(
-                onPressed: () => _showNewTransactionDialog(),
-                icon: const Icon(Icons.add),
-                label: const Text('New Transaction'),
+            ),
+            subtitle: Text(
+              '${transaction.borrowDate.toString().substring(0, 10)} • ${transaction.status}',
+            ),
+            trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (transaction.hasPdf)
+                      IconButton(
+                        icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                        onPressed: () => _openPdf(transaction),
+                        tooltip: 'Open PDF',
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _deleteTransaction(transaction),
+                      tooltip: 'Delete Transaction',
+                    ),
+                  ],
+                ),
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Borrowed Items:', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 8),
+                    ...transaction.borrowedItems.map((item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: Text('${item.materialName} (${item.categoryName})')),
+                          Text('Qty: ${item.quantityBorrowed} / Returned: ${item.quantityReturned}'),
+                        ],
+                      ),
+                    )),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (transaction.status != 'RETURNED')
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showReturnDialog(transaction),
+                              icon: const Icon(Icons.assignment_return),
+                              label: const Text('Return Materials'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade600,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        if (!transaction.hasPdf)
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Generating PDF...')),
+                                );
+                                
+                                await _apiService.generatePdf(transaction.id!);
+                                _loadTransactions(); // refresh
+                                
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('PDF generated successfully')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  _showErrorSnackBar('Error: $e');
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.picture_as_pdf),
+                            label: const Text('Generate PDF'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _transactions.isEmpty
-                    ? const Center(child: Text('No transactions found'))
-                    : ListView.builder(
-                        itemCount: _transactions.length,
-                        itemBuilder: (context, index) {
-                          final transaction = _transactions[index];
-                          // Display name is Group Name if available, else Student Name (legacy)
-                          final displayName = transaction.groupName.isNotEmpty 
-                              ? transaction.groupName 
-                              : transaction.studentName;
-                              
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ExpansionTile(
-                              leading: Icon(
-                                transaction.status == 'BORROWED'
-                                    ? Icons.arrow_upward
-                                    : transaction.status == 'RETURNED'
-                                        ? Icons.arrow_downward
-                                        : Icons.swap_horiz,
-                                color: transaction.status == 'BORROWED'
-                                    ? Colors.orange
-                                    : Colors.green,
-                              ),
-                              title: Text(displayName),
-                              subtitle: Text(
-                                '${transaction.borrowDate.toString().substring(0, 10)} • ${transaction.status}',
-                              ),
-                              trailing: transaction.hasPdf
-                                  ? IconButton(
-                                      icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                                      onPressed: () => _openPdf(transaction),
-                                      tooltip: 'Open PDF',
-                                    )
-                                  : null,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Borrowed Items:', style: Theme.of(context).textTheme.titleSmall),
-                                      const SizedBox(height: 8),
-                                      ...transaction.borrowedItems.map((item) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 4),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text('${item.materialName} (${item.categoryName})'),
-                                            Text('Qty: ${item.quantityBorrowed} / Returned: ${item.quantityReturned}'),
-                                          ],
-                                        ),
-                                      )),
-                                      const SizedBox(height: 16),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
-                                        children: [
-                                          if (transaction.status != 'RETURNED')
-                                            Padding(
-                                              padding: const EdgeInsets.only(right: 8.0),
-                                              child: ElevatedButton.icon(
-                                                onPressed: () => _showReturnDialog(transaction),
-                                                icon: const Icon(Icons.assignment_return),
-                                                label: const Text('Return Materials'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green.shade600,
-                                                  foregroundColor: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                          if (!transaction.hasPdf)
-                                            ElevatedButton.icon(
-                                              onPressed: () async {
-                                                try {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(content: Text('Generating PDF...')),
-                                                  );
-                                                  
-                                                  await _apiService.generatePdf(transaction.id!);
-                                                  _loadTransactions(); // refresh
-                                                  
-                                                  if (context.mounted) {
-                                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      const SnackBar(content: Text('PDF generated successfully')),
-                                                    );
-                                                  }
-                                                } catch (e) {
-                                                  if (context.mounted) {
-                                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                                    _showErrorSnackBar('Error: $e');
-                                                  }
-                                                }
-                                              },
-                                              icon: const Icon(Icons.picture_as_pdf),
-                                              label: const Text('Generate PDF'),
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteTransaction(BorrowTransaction transaction) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Text('Are you sure you want to delete this transaction for ${transaction.groupName}? This will restore all remaining items to inventory.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      try {
+        await _apiService.deleteTransaction(transaction.id!);
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Transaction deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) _showErrorSnackBar('Error deleting transaction: $e');
+      }
+    }
   }
 
   void _showReturnDialog(BorrowTransaction transaction) {
@@ -655,5 +821,177 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     } catch (e) {
       if (mounted) _showErrorSnackBar('Error opening PDF: $e');
     }
+  }
+
+  void _showGroupDialogFromTransaction(Group group) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: group.name);
+    
+    // Track selected student IDs
+    List<int> selectedStudentIds = group.students.map((s) => s.id).toList();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Edit Group Members'),
+          content: SizedBox(
+            width: 500,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Group Name'),
+                    validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Members', style: Theme.of(context).textTheme.titleMedium),
+                      TextButton.icon(
+                        onPressed: () => _showAddStudentDialog(setState),
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('Add Student'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: _allStudents.isEmpty 
+                      ? const Center(child: Text('No students available. Add students first.'))
+                      : ListView.builder(
+                        itemCount: _allStudents.length,
+                        itemBuilder: (context, index) {
+                          final student = _allStudents[index];
+                          final isSelected = selectedStudentIds.contains(student.id);
+                          return CheckboxListTile(
+                            title: Text(student.fullName),
+                            subtitle: Text(student.idCardNumber),
+                            value: isSelected,
+                            onChanged: (value) {
+                              setState(() {
+                                if (value == true) {
+                                  selectedStudentIds.add(student.id);
+                                } else {
+                                  selectedStudentIds.remove(student.id);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  if (selectedStudentIds.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please select at least one student')),
+                    );
+                    return;
+                  }
+
+                  try {
+                    final updatedGroupName = nameController.text;
+                    await _apiService.updateGroup(group.id, updatedGroupName, selectedStudentIds);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      _loadData();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Group updated successfully')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) _showErrorSnackBar('Error: $e');
+                  }
+                }
+              },
+              child: const Text('Save Changes'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddStudentDialog(StateSetter parentSetState) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final idCardController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Quick Add Student'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Full Name'),
+                validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+              ),
+              TextFormField(
+                controller: idCardController,
+                decoration: const InputDecoration(labelText: 'ID Card Number'),
+                validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                try {
+                  final newStudent = Student(
+                    id: 0,
+                    fullName: nameController.text,
+                    idCardNumber: idCardController.text,
+                    phoneNumber: '', 
+                    email: '',           // Added missing required field
+                    transactionsCount: 0, // Added missing required field
+                    createdAt: DateTime.now(), // Added missing required field
+                    updatedAt: DateTime.now(), // Added missing required field
+                  );
+                  await _apiService.createStudent(newStudent);
+                  await _loadStudents(); // Refresh global list
+                  parentSetState(() {}); // Refresh dialog list
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) _showErrorSnackBar('Error: $e');
+                }
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
   }
 }

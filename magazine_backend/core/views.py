@@ -335,7 +335,7 @@ class BorrowTransactionViewSet(viewsets.ModelViewSet):
             from django.db import transaction as db_transaction
             with db_transaction.atomic():
                 for item_data in items_data:
-                    item_id = item_data.get('item_id')  # Changed from 'id' to 'item_id'
+                    item_id = item_data.get('item_id')
                     quantity_returned = item_data.get('quantity_returned', 0)
                     
                     if item_id and quantity_returned > 0:
@@ -346,21 +346,19 @@ class BorrowTransactionViewSet(viewsets.ModelViewSet):
                         actual_return = min(quantity_returned, remaining)
                         
                         if actual_return > 0:
-                            # Update item
+                            # Update item - signal handles inventory and status
                             borrowed_item.quantity_returned += actual_return
                             borrowed_item.save()
-                            
-                            # Update material availability
-                            material = borrowed_item.material
-                            material.available_quantity += actual_return
-                            material.save()
+                            print(f"DEBUG [Backend]: Item {borrowed_item.id} quantity_returned set to {borrowed_item.quantity_returned}")
                 
-                # Update transaction status
+                # Explicitly update status here to be 100% sure, even though signals should handle it
+                print(f"DEBUG [Backend]: Triggering manual update_status for Transaction {transaction.id}")
                 transaction.update_status()
             
-            # Refresh and return
-            transaction.refresh_from_db()
-            serializer = self.get_serializer(transaction)
+            # Refresh and return - force a total re-fetch to clear prefetch caches
+            fresh_transaction = BorrowTransaction.objects.get(pk=transaction.pk)
+            print(f"DEBUG [Backend]: Final check for Transaction {fresh_transaction.id} status: {fresh_transaction.status}")
+            serializer = self.get_serializer(fresh_transaction)
             return Response(serializer.data)
         
         except BorrowedItem.DoesNotExist:
