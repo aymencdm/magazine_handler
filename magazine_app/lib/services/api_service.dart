@@ -95,6 +95,14 @@ class ApiService {
     return (data as List).map((json) => Category.fromJson(json)).toList();
   }
 
+  Future<List<Category>> getCategoriesByType(String materialType) async {
+    final data = await _get('/categories/by_type/?type=$materialType');
+    if (data is Map && data.containsKey('results')) {
+      return (data['results'] as List).map((json) => Category.fromJson(json)).toList();
+    }
+    return (data as List).map((json) => Category.fromJson(json)).toList();
+  }
+
   Future<Category> createCategory(Category category) async {
     final data = await _post('/categories/', category.toJson());
     return Category.fromJson(data);
@@ -108,6 +116,71 @@ class ApiService {
   Future<void> deleteCategory(int id) async {
     await _delete('/categories/$id/');
   }
+
+  Future<void> generateCategoryPdf(int categoryId) async {
+    await _post('/categories/$categoryId/generate_pdf/', {});
+  }
+
+  Future<File> downloadCategoryPdf(int categoryId, String savePath) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/categories/$categoryId/export_pdf/'),
+    );
+
+    if (response.statusCode == 200) {
+      final file = File(savePath);
+      await file.writeAsBytes(response.bodyBytes);
+      return file;
+    } else {
+      throw Exception('Failed to download PDF: ${response.statusCode}');
+    }
+  }
+
+  Future<File> downloadAllCategoriesPdf(String savePath) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/categories/export_all_pdf/'),
+    );
+
+    if (response.statusCode == 200) {
+      final file = File(savePath);
+      await file.writeAsBytes(response.bodyBytes);
+      return file;
+    } else {
+      throw Exception('Failed to download PDF: ${response.statusCode}');
+    }
+  }
+
+  // ========== DATABASE OPERATIONS ==========
+  Future<File> exportDatabase(String savePath) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/database/export/'),
+    );
+
+    if (response.statusCode == 200) {
+      final file = File(savePath);
+      await file.writeAsBytes(response.bodyBytes);
+      return file;
+    } else {
+      throw Exception('Failed to export database: ${response.statusCode}');
+    }
+  }
+
+  Future<Map<String, dynamic>> importDatabase(File file) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/database/import/'),
+    );
+    request.files.add(await http.MultipartFile.fromPath('file', file.path));
+    
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to import database: ${response.statusCode} - ${response.body}');
+    }
+  }
+
 
   // ========== MATERIALS ==========
   Future<List<app_material.Material>> getMaterials() async {

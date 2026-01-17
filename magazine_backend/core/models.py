@@ -5,8 +5,14 @@ from django.utils import timezone
 
 class Category(models.Model):
     """Material categories (e.g., Sensors, ICs, Tools, Power Components)"""
+    MATERIAL_TYPE_CHOICES = [
+        ('FABLAB', 'FabLab'),
+        ('STCB', 'STCB Club'),
+    ]
+    
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
+    material_type = models.CharField(max_length=10, choices=MATERIAL_TYPE_CHOICES, default='FABLAB')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

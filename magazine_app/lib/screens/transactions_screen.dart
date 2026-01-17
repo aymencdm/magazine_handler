@@ -457,10 +457,22 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  Future<void> _openPdf(BorrowTransaction transaction) async {
+    Future<void> _openPdf(BorrowTransaction transaction) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = '${directory.path}/transaction_${transaction.id}.pdf';
+      final documentsDir = await getApplicationDocumentsDirectory();
+      
+      // Sanitized group name for folder creation
+      // If groupName is empty (individual student), use "Individual_Students" or similar
+      String cleanName = transaction.groupName.isNotEmpty 
+          ? transaction.groupName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_') 
+          : 'Individual_Students';
+          
+      final groupDir = Directory('${documentsDir.path}${Platform.pathSeparator}$cleanName');
+      if (!await groupDir.exists()) {
+        await groupDir.create(recursive: true);
+      }
+
+      final filePath = '${groupDir.path}${Platform.pathSeparator}transaction_${transaction.id}.pdf';
       final file = File(filePath);
 
       if (!await file.exists()) {
@@ -472,12 +484,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         await _apiService.downloadPdf(transaction.id!, filePath);
       }
 
+      // Open the file/folder
       if (Platform.isWindows) {
-        await Process.run('explorer', [filePath]);
+        // explorer /select, <path> opens explorer with the file selected
+        await Process.run('explorer', ['/select,', filePath]);
       } else if (Platform.isLinux) {
-        await Process.run('xdg-open', [filePath]);
+        // xdg-open opens the file in default viewer. To open folder, we pass directory.
+        // But user asked to "send me to it", usually implying seeing the file in folder context.
+        // For now, let's open the directory for consistency with the request "folder with the groups name"
+        await Process.run('xdg-open', [groupDir.path]);
       } else if (Platform.isMacOS) {
-        await Process.run('open', [filePath]);
+        await Process.run('open', ['-R', filePath]); // -R reveals in Finder
       }
     } catch (e) {
       if (mounted) _showErrorSnackBar('Error opening PDF: $e');

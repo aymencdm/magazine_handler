@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
-import 'screens/categories_screen.dart';
+import 'screens/fablab_screen.dart';
+import 'screens/stcb_screen.dart';
 import 'screens/students_screen.dart';
 import 'screens/groups_screen.dart';
-import 'screens/materials_screen.dart';
 import 'screens/transactions_screen.dart';
-import 'screens/pdf_settings_screen.dart';
+import 'screens/settings_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -49,10 +49,12 @@ class _HomePageState extends State<HomePage> {
 
   final List<Widget> _pages = [
     const DashboardScreen(),
-    const CategoriesScreen(),
+    const FabLabScreen(),
+    const STCBScreen(),
     const StudentsScreen(),
     const GroupsScreen(),
     const TransactionsScreen(),
+    const SettingsScreen(),
   ];
 
   @override
@@ -61,17 +63,6 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('School Electronics Magazine'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PdfSettingsScreen()),
-              );
-            },
-          ),
-        ],
       ),
       body: Row(
         children: [
@@ -90,9 +81,14 @@ class _HomePageState extends State<HomePage> {
                 label: Text('Dashboard'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.category_outlined),
-                selectedIcon: Icon(Icons.category),
-                label: Text('Categories'),
+                icon: Icon(Icons.precision_manufacturing_outlined),
+                selectedIcon: Icon(Icons.precision_manufacturing),
+                label: Text('FabLab'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.science_outlined),
+                selectedIcon: Icon(Icons.science),
+                label: Text('STCB Club'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.people_outline),
@@ -108,6 +104,11 @@ class _HomePageState extends State<HomePage> {
                 icon: Icon(Icons.swap_horiz_outlined),
                 selectedIcon: Icon(Icons.swap_horiz),
                 label: Text('Transactions'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text('Settings'),
               ),
             ],
           ),

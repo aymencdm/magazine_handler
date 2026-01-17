@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import '../services/api_service.dart';
 import '../models/category.dart';
 import 'category_detail_screen.dart';
@@ -54,10 +56,24 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 'Categories',
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
-              ElevatedButton.icon(
-                onPressed: () => _showAddCategoryDialog(),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Category'),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _exportAllPdf(),
+                    icon: const Icon(Icons.picture_as_pdf),
+                    label: const Text('Export All PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => _showAddCategoryDialog(),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Category'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -98,6 +114,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                                     backgroundColor: Colors.blue.shade50,
                                   ),
                                   const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                                    onPressed: () => _exportCategoryPdf(category),
+                                    tooltip: 'Export PDF',
+                                  ),
                                   IconButton(
                                     icon: const Icon(Icons.edit),
                                     onPressed: () => _showEditCategoryDialog(category),
@@ -161,6 +182,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     id: 0,
                     name: nameController.text,
                     description: descriptionController.text,
+                    materialType: 'FABLAB',
                     materialsCount: 0,
                     createdAt: DateTime.now(),
                     updatedAt: DateTime.now(),
@@ -233,6 +255,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                       id: category.id,
                       name: nameController.text,
                       description: descriptionController.text,
+                      materialType: category.materialType,
                       materialsCount: category.materialsCount,
                       createdAt: category.createdAt,
                       updatedAt: DateTime.now(),
@@ -298,5 +321,92 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _exportCategoryPdf(Category category) async {
+    try {
+      final documentsDir = await getApplicationDocumentsDirectory();
+      
+      // Create category-specific folder
+      String cleanName = category.name.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+      final categoryDir = Directory('${documentsDir.path}${Platform.pathSeparator}$cleanName');
+      if (!await categoryDir.exists()) {
+        await categoryDir.create(recursive: true);
+      }
+
+      final filePath = '${categoryDir.path}${Platform.pathSeparator}inventory_${category.id}.pdf';
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generating PDF...')),
+        );
+      }
+
+      await _apiService.downloadCategoryPdf(category.id, filePath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
+
+      // Open the folder
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,', filePath]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [categoryDir.path]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', filePath]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportAllPdf() async {
+    try {
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final filePath = '${documentsDir.path}${Platform.pathSeparator}all_categories_inventory.pdf';
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generating PDF for all categories...')),
+        );
+      }
+
+      await _apiService.downloadAllCategoriesPdf(filePath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF generated successfully!')),
+        );
+      }
+
+      // Open the folder
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,', filePath]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [documentsDir.path]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', filePath]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
