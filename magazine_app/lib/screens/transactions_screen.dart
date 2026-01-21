@@ -273,21 +273,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       ? Colors.green
                       : Colors.blue,
             ),
-            title: InkWell(
-              onTap: transaction.group != null 
-                ? () {
-                    print('DEBUG: Clicked group name: ${transaction.groupName}');
-                    final group = _groups.firstWhere((g) => g.id == transaction.group);
-                    _showGroupDialogFromTransaction(group);
-                  }
-                : null,
-              child: Text(
-                displayName,
-                style: transaction.group != null 
-                    ? const TextStyle(decoration: TextDecoration.underline, color: Colors.blue)
-                    : null,
-              ),
-            ),
+            title: Text(displayName),
             subtitle: Text(
               '${transaction.borrowDate.toString().substring(0, 10)} • ${transaction.status}',
             ),

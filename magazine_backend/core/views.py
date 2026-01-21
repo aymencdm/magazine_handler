@@ -91,11 +91,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=500)
 
     @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'])
     def export_all_pdf(self, request):
-        """Generate and download PDF for all categories"""
+        """Generate and download PDF for all categories (optional type filter)"""
+        material_type = request.query_params.get('type')
+        
         try:
-            # Generate PDF for all categories
-            pdf_path = generate_all_categories_pdf()
+            # Generate PDF for all categories (filtered by type if provided)
+            pdf_path = generate_all_categories_pdf(material_type=material_type)
             full_path = os.path.join(settings.MEDIA_ROOT, pdf_path)
             
             if not os.path.exists(full_path):
